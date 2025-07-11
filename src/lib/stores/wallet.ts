@@ -154,7 +154,7 @@ export const walletActions = {
 		kaswareService.onBalanceChanged(async (balance: unknown) => {
 			walletStore.update((state) => ({
 				...state,
-				balance
+				balance: balance as { confirmed: number; unconfirmed: number } | null
 			}));
 		});
 

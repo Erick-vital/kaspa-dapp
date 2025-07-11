@@ -10,15 +10,20 @@
 		// Configurar marked con opciones recomendadas
 		marked.setOptions({
 			breaks: true,
-			gfm: true,
-			sanitize: false, // Mantener false para permitir HTML personalizado
-			smartypants: true
+			gfm: true
 		});
 	});
 
 	$: {
 		if (markdownContent) {
-			htmlContent = marked(markdownContent);
+			const result = marked(markdownContent);
+			if (typeof result === 'string') {
+				htmlContent = result;
+			} else {
+				result.then((html) => {
+					htmlContent = html;
+				});
+			}
 		}
 	}
 </script>
