@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
-	
+
 	const article = {
 		id: 1,
 		title: 'Introduction to SvelteKit',
@@ -47,77 +47,83 @@ And that's it! You'll have a SvelteKit application running in seconds.
 	<meta name="description" content={article.title} />
 </svelte:head>
 
-<article class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+<article class="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
 	<div class="mb-8">
-		<nav class="text-sm text-gray-500 mb-4">
+		<nav class="mb-4 text-sm text-gray-500">
 			<a href="/" class="hover:text-gray-700">Home</a>
 			<span class="mx-2">›</span>
 			<a href="/articles" class="hover:text-gray-700">Articles</a>
 			<span class="mx-2">›</span>
 			<span class="text-gray-700">{article.title}</span>
 		</nav>
-		
+
 		<header class="mb-8">
-			<h1 class="text-4xl font-bold text-gray-900 mb-4">{article.title}</h1>
-			<div class="flex items-center gap-4 text-gray-600 mb-6">
+			<h1 class="mb-4 text-4xl font-bold text-gray-900">{article.title}</h1>
+			<div class="mb-6 flex items-center gap-4 text-gray-600">
 				<span>By {article.author}</span>
 				<span>•</span>
 				<span>{article.date}</span>
 				<span>•</span>
 				<span>{article.readingTime} read</span>
 			</div>
-			<div class="flex flex-wrap gap-2 mb-6">
+			<div class="mb-6 flex flex-wrap gap-2">
 				{#each article.tags as tag}
-					<span class="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
+					<span class="rounded-full bg-blue-100 px-3 py-1 text-sm text-blue-800">
 						{tag}
 					</span>
 				{/each}
 			</div>
 		</header>
-		
-		<img 
-			src={article.image} 
+
+		<img
+			src={article.image}
 			alt={article.title}
-			class="w-full h-64 md:h-96 object-cover rounded-lg mb-8"
-		>
+			class="mb-8 h-64 w-full rounded-lg object-cover md:h-96"
+		/>
 	</div>
-	
+
 	<MarkdownRenderer markdownContent={article.content} />
-	
-	<div class="mt-12 pt-8 border-t border-gray-200">
+
+	<div class="mt-12 border-t border-gray-200 pt-8">
 		<div class="flex items-center justify-between">
 			<div class="flex items-center space-x-4">
 				<button class="flex items-center space-x-2 text-gray-600 hover:text-red-500">
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+					<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+						></path>
 					</svg>
 					<span>Like</span>
 				</button>
 				<button class="flex items-center space-x-2 text-gray-600 hover:text-blue-500">
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"></path>
+					<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"
+						></path>
 					</svg>
 					<span>Share</span>
 				</button>
 			</div>
 			<div class="flex items-center space-x-2">
 				<span class="text-sm text-gray-500">Did you like this article?</span>
-				<button class="text-blue-600 hover:text-blue-800 font-medium">Follow me</button>
+				<button class="font-medium text-blue-600 hover:text-blue-800">Follow me</button>
 			</div>
 		</div>
 	</div>
-	
-	<div class="mt-12 bg-gray-50 rounded-lg p-6">
-		<h3 class="text-lg font-semibold text-gray-900 mb-4">About the author</h3>
+
+	<div class="mt-12 rounded-lg bg-gray-50 p-6">
+		<h3 class="mb-4 text-lg font-semibold text-gray-900">About the author</h3>
 		<div class="flex items-start space-x-4">
-			<img 
-				src="/api/placeholder/60/60" 
-				alt={article.author}
-				class="w-15 h-15 rounded-full"
-			>
+			<img src="/api/placeholder/60/60" alt={article.author} class="h-15 w-15 rounded-full" />
 			<div>
 				<h4 class="font-medium text-gray-900">{article.author}</h4>
-				<p class="text-gray-600 text-sm mt-1">
+				<p class="mt-1 text-sm text-gray-600">
 					Web developer with over 5 years of experience in JavaScript and modern frameworks.
 					Passionate about creating efficient and scalable web applications.
 				</p>

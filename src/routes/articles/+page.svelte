@@ -32,14 +32,16 @@
 
 <div class="px-4 sm:px-6 lg:px-8">
 	<div class="mb-8">
-		<h1 class="text-3xl font-bold text-gray-900 mb-4">All Articles</h1>
-		<div class="flex flex-col sm:flex-row gap-4 mb-6">
-			<input 
-				type="text" 
-				placeholder="Search articles..." 
-				class="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+		<h1 class="mb-4 text-3xl font-bold text-gray-900">All Articles</h1>
+		<div class="mb-6 flex flex-col gap-4 sm:flex-row">
+			<input
+				type="text"
+				placeholder="Search articles..."
+				class="flex-1 rounded-md border border-gray-300 px-4 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+			/>
+			<select
+				class="rounded-md border border-gray-300 px-4 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
 			>
-			<select class="px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
 				<option>All topics</option>
 				<option>JavaScript</option>
 				<option>CSS</option>
@@ -50,20 +52,18 @@
 
 	<div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
 		{#each articles as article}
-			<article class="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
-				<img 
-					src={article.image} 
-					alt={article.title}
-					class="w-full h-48 object-cover"
-				>
+			<article
+				class="overflow-hidden rounded-lg bg-white shadow-md transition-shadow hover:shadow-lg"
+			>
+				<img src={article.image} alt={article.title} class="h-48 w-full object-cover" />
 				<div class="p-6">
-					<h2 class="text-xl font-semibold text-gray-900 mb-2 hover:text-blue-600">
+					<h2 class="mb-2 text-xl font-semibold text-gray-900 hover:text-blue-600">
 						<a href="/articles/{article.id}">{article.title}</a>
 					</h2>
-					<p class="text-gray-600 mb-4">{article.summary}</p>
-					<div class="flex flex-wrap gap-2 mb-4">
+					<p class="mb-4 text-gray-600">{article.summary}</p>
+					<div class="mb-4 flex flex-wrap gap-2">
 						{#each article.tags as tag}
-							<span class="px-2 py-1 bg-gray-100 text-gray-700 text-sm rounded">
+							<span class="rounded bg-gray-100 px-2 py-1 text-sm text-gray-700">
 								{tag}
 							</span>
 						{/each}
@@ -80,7 +80,7 @@
 	<div class="mt-12 flex justify-center">
 		<nav class="flex space-x-2">
 			<button class="px-3 py-2 text-gray-500 hover:text-gray-700">Previous</button>
-			<button class="px-3 py-2 bg-blue-600 text-white rounded">1</button>
+			<button class="rounded bg-blue-600 px-3 py-2 text-white">1</button>
 			<button class="px-3 py-2 text-gray-500 hover:text-gray-700">2</button>
 			<button class="px-3 py-2 text-gray-500 hover:text-gray-700">3</button>
 			<button class="px-3 py-2 text-gray-500 hover:text-gray-700">Next</button>
