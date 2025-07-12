@@ -1,8 +1,15 @@
+export interface TransactionWithData {
+	toAddress?: string;
+	sompi?: number;
+	data?: string;
+}
+
 export interface KaswareWallet {
 	requestAccounts(): Promise<string[]>;
 	getAccounts(): Promise<string[]>;
 	getBalance(): Promise<{ confirmed: number; unconfirmed: number }>;
 	sendKaspa(toAddress: string, sompi: number): Promise<string>;
+	sendTransaction?(transaction: TransactionWithData): Promise<string>;
 	signMessage(message: string): Promise<string>;
 	getKRC20Balance(): Promise<unknown>;
 	getVersion(): Promise<string>;
@@ -138,6 +145,36 @@ export class KaswareService {
 		}
 
 		this.wallet.on('balanceChanged', callback);
+	}
+
+	public async sendTransaction(transaction: TransactionWithData): Promise<string> {
+		if (!this.wallet) {
+			throw new Error('KasWare wallet not installed');
+		}
+
+		try {
+			if (this.wallet.sendTransaction) {
+				return await this.wallet.sendTransaction(transaction);
+			} else {
+				if (!transaction.toAddress || transaction.sompi === undefined) {
+					throw new Error('sendTransaction not supported, fallback requires toAddress and sompi');
+				}
+				console.warn('Using fallback sendKaspa - data will be ignored');
+				return await this.wallet.sendKaspa(transaction.toAddress, transaction.sompi);
+			}
+		} catch (error) {
+			throw new Error(`Failed to send transaction: ${error}`);
+		}
+	}
+
+	public async sendTransactionWithData(data: string, toAddress?: string, sompi?: number): Promise<string> {
+		const transaction: TransactionWithData = {
+			data,
+			...(toAddress && { toAddress }),
+			...(sompi !== undefined && { sompi })
+		};
+
+		return this.sendTransaction(transaction);
 	}
 
 	public removeAllListeners(): void {

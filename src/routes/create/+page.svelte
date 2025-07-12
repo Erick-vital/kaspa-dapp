@@ -1,40 +1,145 @@
 <script lang="ts">
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+	import { articleService } from '$lib/services/article';
+	import { walletStore } from '$lib/stores/wallet';
+	import type { CreateArticleRequest } from '$lib/types/article';
 
 	let title = '';
 	let content = '';
-	let summary = '';
-	let tags = '';
 	let image = '';
 	let isPublic = true;
+	let price = 0;
 	let savingDraft = false;
 	let publishing = false;
 	let activeTab = 'editor';
+	let publishResult = '';
+	let publishError = '';
+
+	// Reactive variables for content size calculation
+	$: contentSize = content ? new TextEncoder().encode(content).length : 0;
+	$: maxSize = 10 * 1024; // 10KB
+	$: isOverLimit = contentSize > maxSize;
+	$: sizePercentage = maxSize > 0 ? Math.min((contentSize / maxSize) * 100, 100) : 0;
+	$: contentSizeKB = contentSize / 1024;
+	
+	// Debug reactive update
+	$: if (typeof window !== 'undefined') {
+		console.log('Content size updated:', { 
+			contentLength: content.length, 
+			contentSize, 
+			contentSizeKB: contentSizeKB.toFixed(1) 
+		});
+	}
 
 	function saveDraft() {
 		savingDraft = true;
-		setTimeout(() => {
+		try {
+			const draft = {
+				title,
+				content,
+				image,
+				isPublic,
+				price,
+				savedAt: Date.now()
+			};
+			localStorage.setItem('articleDraft', JSON.stringify(draft));
+			publishResult = 'Draft saved successfully';
+			publishError = '';
+		} catch (error) {
+			publishError = 'Failed to save draft';
+			publishResult = '';
+		} finally {
 			savingDraft = false;
-			alert('Draft saved successfully');
-		}, 1000);
+		}
 	}
 
-	function publishArticle() {
+	function loadDraft() {
+		try {
+			const stored = localStorage.getItem('articleDraft');
+			if (stored) {
+				const draft = JSON.parse(stored);
+				title = draft.title || '';
+				content = draft.content || '';
+				image = draft.image || '';
+				isPublic = draft.isPublic !== undefined ? draft.isPublic : true;
+				price = draft.price || 0;
+				publishResult = 'Draft loaded';
+				publishError = '';
+			}
+		} catch (error) {
+			publishError = 'Failed to load draft';
+		}
+	}
+
+	async function publishArticle() {
 		if (!title || !content) {
-			alert('Please complete at least the title and content');
+			publishError = 'Please complete at least the title and content';
+			publishResult = '';
+			return;
+		}
+
+		if (isOverLimit) {
+			publishError = `Content too large: ${contentSizeKB.toFixed(1)}KB (max: 10KB)`;
+			publishResult = '';
+			return;
+		}
+
+		if (!isPublic && (!price || price <= 0)) {
+			publishError = 'Private articles must have a price greater than 0';
+			publishResult = '';
 			return;
 		}
 
 		publishing = true;
-		setTimeout(() => {
+		publishError = '';
+		publishResult = '';
+
+		try {
+			const request: CreateArticleRequest = {
+				title,
+				content,
+				tags: [], // Simplified - no tags for now
+				image: image || undefined,
+				isPublic,
+				price: isPublic ? undefined : price * 100000000 // convertir KAS a sompi
+			};
+
+			const result = await articleService.publishArticle(request);
+
+			if (result.success) {
+				publishResult = `Article published successfully! Transaction ID: ${result.txId}`;
+				// Limpiar formulario después de publicar exitosamente
+				title = '';
+				content = '';
+				image = '';
+				isPublic = true;
+				price = 0;
+				// Limpiar draft guardado
+				localStorage.removeItem('articleDraft');
+			} else {
+				publishError = result.error || 'Unknown error occurred';
+			}
+		} catch (error) {
+			publishError = error instanceof Error ? error.message : 'Unknown error occurred';
+		} finally {
 			publishing = false;
-			alert('Article published successfully');
-		}, 1500);
+		}
 	}
 
 	function changeTab(tab: string) {
 		activeTab = tab;
 	}
+
+	function clearMessages() {
+		publishResult = '';
+		publishError = '';
+	}
+
+	// Cargar draft al montar el componente
+	import { onMount } from 'svelte';
+	onMount(() => {
+		loadDraft();
+	});
 </script>
 
 <svelte:head>
@@ -60,23 +165,11 @@
 						id="title"
 						type="text"
 						bind:value={title}
+						on:input={clearMessages}
 						placeholder="Write an attractive title..."
 						class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
 						required
 					/>
-				</div>
-
-				<div>
-					<label for="summary" class="mb-2 block text-sm font-medium text-gray-700">
-						Summary
-					</label>
-					<textarea
-						id="summary"
-						bind:value={summary}
-						placeholder="Write a brief summary of the article..."
-						rows="3"
-						class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-					></textarea>
 				</div>
 
 				<div>
@@ -87,21 +180,10 @@
 						id="image"
 						type="url"
 						bind:value={image}
+						on:input={clearMessages}
 						placeholder="https://example.com/image.jpg"
 						class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
 					/>
-				</div>
-
-				<div>
-					<label for="tags" class="mb-2 block text-sm font-medium text-gray-700"> Tags </label>
-					<input
-						id="tags"
-						type="text"
-						bind:value={tags}
-						placeholder="JavaScript, SvelteKit, Web (separated by commas)"
-						class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-					/>
-					<p class="mt-1 text-sm text-gray-500">Separate tags with commas</p>
 				</div>
 			</div>
 		</div>
@@ -143,12 +225,32 @@
 
 			{#if activeTab === 'editor'}
 				<div>
-					<label for="content" class="mb-2 block text-sm font-medium text-gray-700">
-						Content * (Markdown)
-					</label>
+					<div class="flex items-center justify-between mb-2">
+						<label for="content" class="block text-sm font-medium text-gray-700">
+							Content * (Markdown)
+						</label>
+						<div class="text-sm">
+							<span class:text-red-600={isOverLimit} class:text-gray-500={!isOverLimit}>
+								{contentSizeKB.toFixed(1)}KB / 10KB
+							</span>
+							{#if isOverLimit}
+								<span class="text-red-600 ml-1">⚠️ Over limit</span>
+							{/if}
+						</div>
+					</div>
+					
+					<!-- Progress bar -->
+					<div class="mb-3 bg-gray-200 rounded-full h-2 overflow-hidden">
+						<div 
+							class="h-full transition-all duration-300 {isOverLimit ? 'bg-red-500' : sizePercentage > 80 ? 'bg-yellow-500' : 'bg-green-500'}"
+							style="width: {sizePercentage}%"
+						></div>
+					</div>
+
 					<textarea
 						id="content"
 						bind:value={content}
+						on:input={clearMessages}
 						placeholder="# My Article
 
 Write content using **Markdown**...
@@ -162,7 +264,7 @@ Write content using **Markdown**...
 console.log('Hello world');
 ```"
 						rows="20"
-						class="w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+						class="w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 {isOverLimit ? 'border-red-300 focus:border-red-500' : ''}"
 						required
 					></textarea>
 					<p class="mt-1 text-sm text-gray-500">
@@ -266,36 +368,158 @@ console.log('Hello world');
 		<div class="rounded-lg bg-white p-6 shadow-sm">
 			<h2 class="mb-4 text-lg font-medium text-gray-900">Configuration</h2>
 
-			<div class="flex items-center">
-				<input
-					id="public"
-					type="checkbox"
-					bind:checked={isPublic}
-					class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-				/>
-				<label for="public" class="ml-2 block text-sm text-gray-700">
-					Make this article public
-				</label>
+			<div class="space-y-4">
+				<div class="flex items-center">
+					<input
+						id="public"
+						type="checkbox"
+						bind:checked={isPublic}
+						on:change={clearMessages}
+						class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+					/>
+					<label for="public" class="ml-2 block text-sm text-gray-700">
+						Make this article public
+					</label>
+				</div>
+
+				{#if !isPublic}
+					<div>
+						<label for="price" class="mb-2 block text-sm font-medium text-gray-700">
+							Price (KAS) *
+						</label>
+						<input
+							id="price"
+							type="number"
+							min="0.00000001"
+							step="0.00000001"
+							bind:value={price}
+							on:input={clearMessages}
+							placeholder="0.1"
+							class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+							required={!isPublic}
+						/>
+						<p class="mt-1 text-sm text-gray-500">
+							Readers will need to pay this amount in KAS to access the article
+						</p>
+					</div>
+				{/if}
+
+				<div class="rounded-md bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border border-blue-200">
+					<h3 class="text-sm font-medium text-blue-900 mb-3 flex items-center">
+						🌐 Decentralized Publishing
+					</h3>
+					<div class="space-y-3 text-sm">
+						<div class="flex items-start space-x-2">
+							<span class="text-blue-600">📝</span>
+							<div>
+								<span class="text-blue-800 font-medium">Your article will be stored on the Kaspa network</span>
+								<p class="text-blue-600">Permanently available, censorship-resistant, and decentralized</p>
+							</div>
+						</div>
+						
+						{#if $walletStore.address}
+							<div class="flex items-start space-x-2">
+								<span class="text-green-600">👤</span>
+								<div>
+									<span class="text-blue-800 font-medium">Author</span>
+									<p class="text-blue-600 font-mono text-xs break-all">{$walletStore.address}</p>
+								</div>
+							</div>
+						{/if}
+
+						<div class="flex items-start space-x-2">
+							<span class="{isPublic ? 'text-green-600' : 'text-orange-600'}">
+								{isPublic ? '🔓' : '🔒'}
+							</span>
+							<div>
+								<span class="text-blue-800 font-medium">
+									{isPublic ? 'Public Article' : 'Private Article'}
+								</span>
+								<p class="text-blue-600">
+									{isPublic 
+										? 'Anyone can read this article for free' 
+										: `Readers pay ${price || 0} KAS to unlock`
+									}
+								</p>
+							</div>
+						</div>
+
+						<div class="flex items-start space-x-2">
+							<span class="{isOverLimit ? 'text-red-600' : 'text-blue-600'}">📊</span>
+							<div>
+								<span class="text-blue-800 font-medium">Content Size</span>
+								<p class="{isOverLimit ? 'text-red-600' : 'text-blue-600'}">
+									{contentSizeKB.toFixed(1)}KB used of 10KB limit
+									{#if isOverLimit}(Over limit!)
+									{:else if sizePercentage > 80}(Almost full)
+									{:else}(Good){/if}
+								</p>
+							</div>
+						</div>
+					</div>
+				</div>
 			</div>
 		</div>
 
+		<!-- Wallet Connection Status -->
+		{#if $walletStore.isConnected}
+			<div class="rounded-lg bg-green-50 p-4">
+				<div class="flex items-center">
+					<div class="h-2 w-2 rounded-full bg-green-400 mr-2"></div>
+					<span class="text-sm text-green-700">
+						Connected to wallet: {$walletStore.address?.slice(0, 8)}...{$walletStore.address?.slice(-8)}
+					</span>
+				</div>
+			</div>
+		{:else}
+			<div class="rounded-lg bg-yellow-50 p-4">
+				<div class="flex items-center">
+					<div class="h-2 w-2 rounded-full bg-yellow-400 mr-2"></div>
+					<span class="text-sm text-yellow-700">
+						Please connect your KasWare wallet to publish articles
+					</span>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Messages -->
+		{#if publishResult}
+			<div class="rounded-lg bg-green-50 border border-green-200 p-4">
+				<p class="text-sm text-green-700">{publishResult}</p>
+			</div>
+		{/if}
+
+		{#if publishError}
+			<div class="rounded-lg bg-red-50 border border-red-200 p-4">
+				<p class="text-sm text-red-700">{publishError}</p>
+			</div>
+		{/if}
+
 		<div class="flex flex-col justify-end gap-4 sm:flex-row">
+			<button
+				type="button"
+				on:click={loadDraft}
+				class="rounded-md border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500"
+			>
+				Load Draft
+			</button>
+
 			<button
 				type="button"
 				on:click={saveDraft}
 				disabled={savingDraft}
 				class="rounded-md border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
 			>
-				{savingDraft ? 'Saving...' : 'Save draft'}
+				{savingDraft ? 'Saving...' : 'Save Draft'}
 			</button>
 
 			<button
 				type="button"
 				on:click={publishArticle}
-				disabled={publishing}
-				class="rounded-md bg-blue-600 px-6 py-2 text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+				disabled={publishing || !$walletStore.isConnected}
+				class="rounded-md bg-blue-600 px-6 py-2 text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
 			>
-				{publishing ? 'Publishing...' : 'Publish article'}
+				{publishing ? 'Publishing to Kaspa...' : 'Publish Article'}
 			</button>
 		</div>
 	</form>
