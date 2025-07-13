@@ -9,6 +9,8 @@ import type {
 } from '../types/article.js';
 import { kaswareService } from './kasware.js';
 import { cryptoService } from './crypto.js';
+import { walletStore } from '../stores/wallet.js';
+import { get } from 'svelte/store';
 
 export class ArticleService {
 	private static instance: ArticleService;
@@ -300,32 +302,61 @@ export class ArticleService {
 	}
 
 	public async getDecryptedArticles(): Promise<Article[]> {
+		// Check if wallet is connected
+		const walletState = get(walletStore);
+		if (!walletState.isConnected || walletState.isManuallyDisconnected) {
+			console.log('🚫 Wallet not connected, returning empty articles array');
+			return [];
+		}
+
 		const encryptedArticles = this.getStoredArticles();
 		const keys = this.getStoredKeys();
 		const decryptedArticles: Article[] = [];
 
+		console.log('📰 Getting decrypted articles:', {
+			encryptedCount: encryptedArticles.length,
+			keysCount: keys.length
+		});
+
 		for (const encryptedArticle of encryptedArticles) {
 			try {
 				// Buscar la clave correspondiente
-				const articleKey = keys.find(key => key.articleId === encryptedArticle.id);
+				let articleKey = keys.find(key => key.articleId === encryptedArticle.id);
 				
 				if (articleKey) {
+					console.log(`🔑 Found key for article ${encryptedArticle.id}`);
 					const decryptedArticle = await this.decryptArticle(encryptedArticle, articleKey.key);
 					decryptedArticles.push(decryptedArticle);
 				} else {
 					// Si no hay clave pero es público, intentar extraer de payload
 					if (encryptedArticle.metadata.isPublic) {
+						console.log(`🔓 Trying to extract key for public article ${encryptedArticle.id}`);
 						const key = this.extractKeyFromPublicPayload(encryptedArticle.id);
 						if (key) {
+							console.log(`✅ Extracted key for public article ${encryptedArticle.id}`);
 							const decryptedArticle = await this.decryptArticle(encryptedArticle, key);
 							decryptedArticles.push(decryptedArticle);
+							
+							// Almacenar la clave extraída para futuras consultas
+							const extractedKey = {
+								key,
+								articleId: encryptedArticle.id,
+								isPublic: true
+							};
+							this.storeArticleKey(extractedKey);
+						} else {
+							console.warn(`❌ Could not extract key for public article ${encryptedArticle.id}`);
 						}
+					} else {
+						console.warn(`🔒 No key found for private article ${encryptedArticle.id}`);
 					}
 				}
 			} catch (error) {
-				console.warn(`Failed to decrypt article ${encryptedArticle.id}:`, error);
+				console.warn(`💥 Failed to decrypt article ${encryptedArticle.id}:`, error);
 			}
 		}
+
+		console.log(`📊 Successfully decrypted ${decryptedArticles.length} of ${encryptedArticles.length} articles`);
 
 		// Ordenar por fecha de creación (más recientes primero)
 		return decryptedArticles.sort((a, b) => b.createdAt - a.createdAt);
@@ -333,39 +364,74 @@ export class ArticleService {
 
 	private extractKeyFromPublicPayload(articleId: string): string | null {
 		try {
+			console.log(`🔍 Extracting key for article: ${articleId}`);
+
 			// Intentar extraer clave de signatures almacenadas
 			const signatures = localStorage.getItem('articleSignatures') || '{}';
 			const signaturesData = JSON.parse(signatures);
 			
+			console.log(`📝 Checking signatures for ${articleId}:`, signaturesData[articleId] ? 'Found' : 'Not found');
+			
 			if (signaturesData[articleId]) {
-				const payload = JSON.parse(signaturesData[articleId].payload);
-				return payload.key || null;
+				try {
+					const payload = JSON.parse(signaturesData[articleId].payload);
+					console.log(`🔑 Signature payload for ${articleId}:`, { hasKey: !!payload.key });
+					if (payload.key) {
+						return payload.key;
+					}
+				} catch (error) {
+					console.warn(`❌ Error parsing signature payload for ${articleId}:`, error);
+				}
 			}
 
 			// Intentar extraer clave de transactions almacenadas  
 			const transactions = localStorage.getItem('articleTransactions') || '{}';
 			const transactionsData = JSON.parse(transactions);
 			
+			console.log(`💳 Checking transactions for ${articleId}:`, transactionsData[articleId] ? 'Found' : 'Not found');
+			
 			if (transactionsData[articleId]) {
-				const payload = JSON.parse(transactionsData[articleId].payload);
-				return payload.key || null;
+				try {
+					const payload = JSON.parse(transactionsData[articleId].payload);
+					console.log(`🔑 Transaction payload for ${articleId}:`, { hasKey: !!payload.key });
+					if (payload.key) {
+						return payload.key;
+					}
+				} catch (error) {
+					console.warn(`❌ Error parsing transaction payload for ${articleId}:`, error);
+				}
 			}
 
+			console.warn(`🚫 No key found in any payload for article ${articleId}`);
 			return null;
-		} catch {
+		} catch (error) {
+			console.error(`💥 Error extracting key for ${articleId}:`, error);
 			return null;
 		}
 	}
 
 	public async getArticleById(id: string): Promise<Article | null> {
+		// Check if wallet is connected
+		const walletState = get(walletStore);
+		if (!walletState.isConnected || walletState.isManuallyDisconnected) {
+			console.log('🚫 Wallet not connected, cannot access article');
+			return null;
+		}
+
 		const articles = await this.getDecryptedArticles();
 		return articles.find(article => article.id === id) || null;
 	}
 
-	public getArticlesByAuthor(authorAddress: string): Promise<Article[]> {
-		return this.getDecryptedArticles().then(articles => 
-			articles.filter(article => article.author === authorAddress)
-		);
+	public async getArticlesByAuthor(authorAddress: string): Promise<Article[]> {
+		// Check if wallet is connected
+		const walletState = get(walletStore);
+		if (!walletState.isConnected || walletState.isManuallyDisconnected) {
+			console.log('🚫 Wallet not connected, cannot access articles');
+			return [];
+		}
+
+		const articles = await this.getDecryptedArticles();
+		return articles.filter(article => article.author === authorAddress);
 	}
 
 	public async deleteArticle(articleId: string): Promise<boolean> {
@@ -395,6 +461,61 @@ export class ArticleService {
 			console.error('Error deleting article:', error);
 			return false;
 		}
+	}
+
+	public async recoverMissingKeys(): Promise<number> {
+		console.log('🔧 Starting key recovery process...');
+		
+		const encryptedArticles = this.getStoredArticles();
+		const existingKeys = this.getStoredKeys();
+		let recoveredCount = 0;
+
+		for (const article of encryptedArticles) {
+			// Solo intentar recuperar si no tenemos la clave ya
+			const hasKey = existingKeys.some(key => key.articleId === article.id);
+			
+			if (!hasKey && article.metadata.isPublic) {
+				console.log(`🔄 Attempting to recover key for public article: ${article.id}`);
+				
+				const recoveredKey = this.extractKeyFromPublicPayload(article.id);
+				if (recoveredKey) {
+					const keyObject = {
+						key: recoveredKey,
+						articleId: article.id,
+						isPublic: true
+					};
+					
+					this.storeArticleKey(keyObject);
+					recoveredCount++;
+					console.log(`✅ Recovered key for article: ${article.id}`);
+				}
+			}
+		}
+
+		console.log(`🎉 Key recovery complete. Recovered ${recoveredCount} keys.`);
+		return recoveredCount;
+	}
+
+	public getArticleStats() {
+		const articles = this.getStoredArticles();
+		const keys = this.getStoredKeys();
+		const signatures = JSON.parse(localStorage.getItem('articleSignatures') || '{}');
+		const transactions = JSON.parse(localStorage.getItem('articleTransactions') || '{}');
+
+		return {
+			totalArticles: articles.length,
+			totalKeys: keys.length,
+			totalSignatures: Object.keys(signatures).length,
+			totalTransactions: Object.keys(transactions).length,
+			publicArticles: articles.filter(a => a.metadata.isPublic).length,
+			privateArticles: articles.filter(a => !a.metadata.isPublic).length,
+			articlesWithKeys: articles.filter(a => 
+				keys.some(k => k.articleId === a.id)
+			).length,
+			articlesWithoutKeys: articles.filter(a => 
+				!keys.some(k => k.articleId === a.id)
+			).length
+		};
 	}
 }
 

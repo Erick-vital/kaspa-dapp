@@ -128,7 +128,16 @@ export class KaswareService {
 			throw new Error('KasWare wallet not installed');
 		}
 
-		this.wallet.on('accountsChanged', callback);
+		const wrappedCallback = (data: unknown) => {
+			callback(data as string[]);
+		};
+		
+		if (!this.eventListeners.has('accountsChanged')) {
+			this.eventListeners.set('accountsChanged', []);
+		}
+		this.eventListeners.get('accountsChanged')!.push(wrappedCallback);
+		
+		this.wallet.on('accountsChanged', wrappedCallback);
 	}
 
 	public onNetworkChanged(callback: (network: string) => void): void {
@@ -136,7 +145,16 @@ export class KaswareService {
 			throw new Error('KasWare wallet not installed');
 		}
 
-		this.wallet.on('networkChanged', callback);
+		const wrappedCallback = (data: unknown) => {
+			callback(data as string);
+		};
+		
+		if (!this.eventListeners.has('networkChanged')) {
+			this.eventListeners.set('networkChanged', []);
+		}
+		this.eventListeners.get('networkChanged')!.push(wrappedCallback);
+		
+		this.wallet.on('networkChanged', wrappedCallback);
 	}
 
 	public onBalanceChanged(callback: (balance: unknown) => void): void {
@@ -144,6 +162,11 @@ export class KaswareService {
 			throw new Error('KasWare wallet not installed');
 		}
 
+		if (!this.eventListeners.has('balanceChanged')) {
+			this.eventListeners.set('balanceChanged', []);
+		}
+		this.eventListeners.get('balanceChanged')!.push(callback);
+		
 		this.wallet.on('balanceChanged', callback);
 	}
 
@@ -177,15 +200,20 @@ export class KaswareService {
 		return this.sendTransaction(transaction);
 	}
 
+	private eventListeners: Map<string, ((data: unknown) => void)[]> = new Map();
+
 	public removeAllListeners(): void {
 		if (!this.wallet) {
 			return;
 		}
 
-		// Remove common event listeners
-		this.wallet.removeListener('accountsChanged', () => {});
-		this.wallet.removeListener('networkChanged', () => {});
-		this.wallet.removeListener('balanceChanged', () => {});
+		// Remove all tracked event listeners
+		for (const [event, callbacks] of this.eventListeners) {
+			for (const callback of callbacks) {
+				this.wallet.removeListener(event, callback);
+			}
+		}
+		this.eventListeners.clear();
 	}
 }
 

@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { kaswareService } from '../services/kasware.js';
 
 export interface WalletState {
@@ -7,14 +7,22 @@ export interface WalletState {
 	balance: { confirmed: number; unconfirmed: number } | null;
 	isLoading: boolean;
 	error: string | null;
+	isManuallyDisconnected: boolean;
 }
+
+// Check if user manually disconnected (persisted in localStorage)
+const getStoredDisconnectStatus = (): boolean => {
+	if (typeof window === 'undefined') return false;
+	return localStorage.getItem('kasware_manually_disconnected') === 'true';
+};
 
 const initialState: WalletState = {
 	isConnected: false,
 	address: null,
 	balance: null,
 	isLoading: false,
-	error: null
+	error: null,
+	isManuallyDisconnected: getStoredDisconnectStatus()
 };
 
 export const walletStore = writable<WalletState>(initialState);
@@ -26,6 +34,13 @@ export const walletActions = {
 		try {
 			if (!kaswareService.isInstalled()) {
 				throw new Error('KasWare wallet not installed');
+			}
+
+			// Don't auto-reconnect if user manually disconnected
+			const currentState = get(walletStore);
+			if (currentState.isManuallyDisconnected) {
+				walletStore.update((state) => ({ ...state, isLoading: false }));
+				return;
 			}
 
 			const accounts = await kaswareService.getAccounts();
@@ -71,12 +86,16 @@ export const walletActions = {
 
 			if (accounts.length > 0) {
 				const balance = await kaswareService.getBalance();
+				if (typeof window !== 'undefined') {
+					localStorage.removeItem('kasware_manually_disconnected');
+				}
 				walletStore.update((state) => ({
 					...state,
 					isConnected: true,
 					address: accounts[0],
 					balance,
-					isLoading: false
+					isLoading: false,
+					isManuallyDisconnected: false
 				}));
 			} else {
 				throw new Error('No accounts found');
@@ -95,7 +114,11 @@ export const walletActions = {
 
 		try {
 			await kaswareService.disconnect();
-			walletStore.set(initialState);
+			kaswareService.removeAllListeners();
+			if (typeof window !== 'undefined') {
+				localStorage.setItem('kasware_manually_disconnected', 'true');
+			}
+			walletStore.set({ ...initialState, isManuallyDisconnected: true });
 		} catch (error) {
 			walletStore.update((state) => ({
 				...state,
@@ -138,6 +161,11 @@ export const walletActions = {
 		}
 
 		kaswareService.onAccountsChanged(async (accounts: string[]) => {
+			const currentState = get(walletStore);
+			if (currentState.isManuallyDisconnected) {
+				return;
+			}
+			
 			if (accounts.length > 0) {
 				const balance = await kaswareService.getBalance();
 				walletStore.update((state) => ({

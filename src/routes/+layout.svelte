@@ -7,6 +7,7 @@
 		isWalletInstalled,
 		shortAddress
 	} from '$lib/stores/wallet.js';
+	import DebugPanel from '$lib/components/DebugPanel.svelte';
 
 	let { children } = $props();
 
@@ -83,3 +84,6 @@
 		</div>
 	</footer>
 </div>
+
+<!-- Debug Panel -->
+<DebugPanel />

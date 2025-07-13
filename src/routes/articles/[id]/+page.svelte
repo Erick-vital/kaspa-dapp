@@ -140,7 +140,7 @@
 					{#if $walletStore.address === article.author}
 						<div class="flex gap-2">
 							<button
-								on:click={() => handleDelete(article.id)}
+								on:click={() => handleDelete(article!.id)}
 								class="text-red-600 hover:text-red-700 p-2 rounded hover:bg-red-50 transition-colors"
 								title="Delete article"
 							>

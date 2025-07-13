@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import {
 		walletStore,
 		walletActions,
@@ -7,10 +6,6 @@
 		shortAddress
 	} from '$lib/stores/wallet.js';
 
-	onMount(() => {
-		walletActions.checkConnection();
-		walletActions.setupEventListeners();
-	});
 
 	function handleConnectWallet() {
 		walletActions.connect();

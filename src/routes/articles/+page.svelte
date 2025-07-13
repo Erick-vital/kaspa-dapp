@@ -12,6 +12,11 @@
 	let searchQuery = '';
 	let selectedFilter = 'all';
 
+	// Reactive loading when wallet connection changes
+	$: if ($walletStore.isConnected !== undefined) {
+		loadArticles();
+	}
+
 	// Reactive filtering
 	$: {
 		if (searchQuery || selectedFilter !== 'all') {
