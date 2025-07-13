@@ -46,8 +46,8 @@ export class URLShortenerService {
 		}
 
 		try {
-			// Crear datos completos para URL completa (método original)
-			const fullData = {
+			// Crear datos compactos para cifrado (formato compacto)
+			const compactData = {
 				i: article.id,
 				t: article.title,
 				c: article.content,
@@ -58,11 +58,23 @@ export class URLShortenerService {
 				x: article.txId
 			};
 
+			// Crear datos completos para URL completa (formato completo)
+			const fullData = {
+				id: article.id,
+				title: article.title,
+				content: article.content,
+				author: article.author,
+				createdAt: article.createdAt,
+				isPublic: true,
+				...(article.image && { image: article.image }),
+				txId: article.txId
+			};
+
 			// Generar clave para cifrado secundario
 			const secondaryKey = randomBytes(32);
 			
-			// Cifrar datos para almacenamiento
-			const dataString = JSON.stringify(fullData);
+			// Cifrar datos compactos para almacenamiento
+			const dataString = JSON.stringify(compactData);
 			const encryptedPayload = this.encryptForStorage(dataString, secondaryKey);
 			
 			// Enviar al servidor SQLite
@@ -77,7 +89,8 @@ export class URLShortenerService {
 					author: article.author,
 					createdAt: article.createdAt,
 					contentHash: this.hashString(article.content),
-					encryptedPayload: Array.from(encryptedPayload)
+					encryptedPayload: Array.from(encryptedPayload),
+					encryptionKey: Array.from(secondaryKey)
 				})
 			});
 
@@ -85,17 +98,22 @@ export class URLShortenerService {
 				throw new Error(`Server error: ${response.status}`);
 			}
 
-			const { shortId } = await response.json();
+			const { shortId, encryptionKey } = await response.json();
+			
+			// Usar la clave retornada por el servidor (puede ser existente o nueva)
+			const finalKey = encryptionKey ? new Uint8Array(encryptionKey) : secondaryKey;
 
 			// Crear URLs
 			const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
-			const keyBase64 = btoa(String.fromCharCode.apply(null, Array.from(secondaryKey)))
+			const keyBase64 = btoa(String.fromCharCode.apply(null, Array.from(finalKey)))
 				.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 			const shortUrl = `${baseUrl}/articles/${shortId}?k=${keyBase64}`;
 			
 			// URL completa (resistente a censura)
 			const fullDataBase64 = btoa(JSON.stringify(fullData));
 			const fullUrl = `${baseUrl}/articles/${article.id}?shared=${fullDataBase64}`;
+
+			console.log('🔗 URLs generated successfully');
 
 			return { shortUrl, fullUrl };
 		} catch (error) {

@@ -461,6 +461,7 @@ export class ArticleService {
 				
 				console.log('📎 Decoded article data:', { 
 					id: articleData.id, 
+					expectedId: id,
 					isPublic: articleData.isPublic, 
 					title: articleData.title?.substring(0, 50) + '...' 
 				});

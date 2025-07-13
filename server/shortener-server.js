@@ -25,6 +25,7 @@ db.serialize(() => {
     created_at INTEGER NOT NULL,
     content_hash TEXT NOT NULL,
     encrypted_payload BLOB NOT NULL,
+    encryption_key BLOB NOT NULL,
     expires_at INTEGER NOT NULL,
     created_timestamp INTEGER DEFAULT (strftime('%s', 'now'))
   )`);
@@ -89,15 +90,15 @@ setInterval(cleanupExpiredUrls, 60 * 60 * 1000);
 // Create short URL
 app.post('/api/short', async (req, res) => {
   try {
-    const { articleId, title, author, createdAt, contentHash, encryptedPayload } = req.body;
+    const { articleId, title, author, createdAt, contentHash, encryptedPayload, encryptionKey } = req.body;
 
-    if (!articleId || !title || !author || !createdAt || !contentHash || !encryptedPayload) {
+    if (!articleId || !title || !author || !createdAt || !contentHash || !encryptedPayload || !encryptionKey) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
     // Check if URL already exists for this article
     db.get(
-      'SELECT id FROM short_urls WHERE full_article_id = ? AND expires_at > ?',
+      'SELECT id, encryption_key FROM short_urls WHERE full_article_id = ? AND expires_at > ?',
       [articleId, Date.now()],
       async (err, existingRow) => {
         if (err) {
@@ -106,8 +107,11 @@ app.post('/api/short', async (req, res) => {
         }
 
         if (existingRow) {
-          // Return existing short ID
-          return res.json({ shortId: existingRow.id });
+          // Return existing short ID and encryption key
+          return res.json({ 
+            shortId: existingRow.id,
+            encryptionKey: Array.from(existingRow.encryption_key)
+          });
         }
 
         try {
@@ -118,9 +122,9 @@ app.post('/api/short', async (req, res) => {
           // Store in database
           db.run(
             `INSERT INTO short_urls 
-             (id, full_article_id, title, author, created_at, content_hash, encrypted_payload, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [shortId, articleId, title, author, createdAt, contentHash, Buffer.from(new Uint8Array(encryptedPayload)), expiresAt],
+             (id, full_article_id, title, author, created_at, content_hash, encrypted_payload, encryption_key, expires_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [shortId, articleId, title, author, createdAt, contentHash, Buffer.from(new Uint8Array(encryptedPayload)), Buffer.from(new Uint8Array(encryptionKey)), expiresAt],
             function(err) {
               if (err) {
                 console.error('Database insert error:', err);
@@ -128,7 +132,10 @@ app.post('/api/short', async (req, res) => {
               }
 
               console.log(`Created short URL: ${shortId} for article: ${articleId}`);
-              res.json({ shortId });
+              res.json({ 
+                shortId,
+                encryptionKey: encryptionKey
+              });
             }
           );
         } catch (error) {

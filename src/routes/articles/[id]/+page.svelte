@@ -102,20 +102,34 @@
 
 	// Reload article when ID changes
 	$: if (articleId) {
+		// Limpiar state del artículo anterior
+		shortUrl = '';
+		fullUrl = '';
+		showShareModal = false;
+		// Cargar nuevo artículo
 		loadArticle();
 	}
 
 	async function handleShare() {
 		if (!article || !article.isPublic) return;
 		
+		showShareModal = true;
+		
+		// Si ya tenemos URLs generadas, no generar nuevas
+		if (shortUrl && fullUrl) {
+			console.log('📤 Using cached URLs');
+			return;
+		}
+		
 		try {
 			generatingUrls = true;
-			showShareModal = true;
 			
 			// Generar ambas URLs
 			const urls = await urlShortener.createShortURL(article);
 			shortUrl = urls.shortUrl;
 			fullUrl = urls.fullUrl;
+			
+			console.log('📤 Share URLs generated successfully');
 		} catch (error) {
 			console.error('Error generating share URLs:', error);
 			alert('Error generating share URLs');
@@ -143,8 +157,33 @@
 
 	function closeShareModal() {
 		showShareModal = false;
-		fullUrl = '';
+		// No limpiar las URLs para mantenerlas en cache
+		// fullUrl = '';
+		// shortUrl = '';
+	}
+
+	async function regenerateUrls() {
+		if (!article || !article.isPublic) return;
+		
+		// Forzar regeneración limpiando URLs existentes
 		shortUrl = '';
+		fullUrl = '';
+		
+		try {
+			generatingUrls = true;
+			
+			// Generar nuevas URLs
+			const urls = await urlShortener.createShortURL(article);
+			shortUrl = urls.shortUrl;
+			fullUrl = urls.fullUrl;
+			
+			console.log('🔄 URLs regenerated successfully');
+		} catch (error) {
+			console.error('Error regenerating URLs:', error);
+			alert('Error regenerating URLs');
+		} finally {
+			generatingUrls = false;
+		}
 	}
 </script>
 
@@ -397,7 +436,14 @@
 					</div>
 				</div>
 
-				<div class="mt-6 flex justify-end">
+				<div class="mt-6 flex justify-between">
+					<button
+						onclick={regenerateUrls}
+						class="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 transition-colors text-sm"
+						disabled={generatingUrls}
+					>
+						{generatingUrls ? 'Generating...' : 'Regenerate URLs'}
+					</button>
 					<button
 						onclick={closeShareModal}
 						class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors"
