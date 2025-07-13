@@ -53,7 +53,7 @@
 							<span class="text-sm text-green-600">●</span>
 							<span class="font-mono text-sm text-gray-700">{$shortAddress}</span>
 							<button
-								on:click={handleDisconnectWallet}
+								onclick={handleDisconnectWallet}
 								disabled={$walletStore.isLoading}
 								class="text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
 							>
@@ -62,7 +62,7 @@
 						</div>
 					{:else}
 						<button
-							on:click={handleConnectWallet}
+							onclick={handleConnectWallet}
 							disabled={$walletStore.isLoading}
 							class="rounded-md bg-orange-600 px-4 py-2 text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
 						>

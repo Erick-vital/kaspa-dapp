@@ -1,10 +1,25 @@
 <script lang="ts">
 	import type { Article } from '../types/article';
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
+	import { urlShortener } from '../services/urlShortener';
 
 	export let article: Article;
 	export let showPreview = true;
 	export let onDelete: ((id: string) => void) | null = null;
+
+	let articleUrl: string = `/articles/${article.id}`;
+
+	// Generar URL al cargar el componente
+	$: if (article.isPublic) {
+		urlShortener.createShortURL(article).then(({ shortUrl }) => {
+			articleUrl = shortUrl;
+		}).catch(error => {
+			console.warn('Failed to generate short URL:', error);
+			articleUrl = `/articles/${article.id}`;
+		});
+	} else {
+		articleUrl = `/articles/${article.id}`;
+	}
 
 	function formatDate(timestamp: number): string {
 		return new Date(timestamp).toLocaleDateString('en-US', {
@@ -44,7 +59,7 @@
 		<div class="flex items-start justify-between">
 			<div class="flex-1">
 				<h3 class="text-lg font-semibold text-gray-900 mb-2">
-					<a href="/articles/{article.id}" class="hover:text-blue-600 transition-colors">
+					<a href={articleUrl} class="hover:text-blue-600 transition-colors">
 						{article.title}
 					</a>
 				</h3>
@@ -133,7 +148,7 @@
 
 		{#if showPreview}
 			<a 
-				href="/articles/{article.id}" 
+				href={articleUrl} 
 				class="text-blue-600 hover:text-blue-700 text-sm font-medium transition-colors"
 			>
 				Read More →

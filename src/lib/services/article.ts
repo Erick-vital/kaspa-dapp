@@ -302,12 +302,9 @@ export class ArticleService {
 	}
 
 	public async getDecryptedArticles(): Promise<Article[]> {
-		// Check if wallet is connected
+		// Check if wallet is connected for private articles access
 		const walletState = get(walletStore);
-		if (!walletState.isConnected || walletState.isManuallyDisconnected) {
-			console.log('🚫 Wallet not connected, returning empty articles array');
-			return [];
-		}
+		const isWalletConnected = walletState.isConnected && !walletState.isManuallyDisconnected;
 
 		const encryptedArticles = this.getStoredArticles();
 		const keys = this.getStoredKeys();
@@ -348,7 +345,12 @@ export class ArticleService {
 							console.warn(`❌ Could not extract key for public article ${encryptedArticle.id}`);
 						}
 					} else {
-						console.warn(`🔒 No key found for private article ${encryptedArticle.id}`);
+						// Skip private articles if wallet not connected
+						if (!isWalletConnected) {
+							console.log(`🔒 Skipping private article ${encryptedArticle.id} - wallet not connected`);
+						} else {
+							console.warn(`🔒 No key found for private article ${encryptedArticle.id}`);
+						}
 					}
 				}
 			} catch (error) {
@@ -410,16 +412,133 @@ export class ArticleService {
 		}
 	}
 
-	public async getArticleById(id: string): Promise<Article | null> {
-		// Check if wallet is connected
-		const walletState = get(walletStore);
-		if (!walletState.isConnected || walletState.isManuallyDisconnected) {
-			console.log('🚫 Wallet not connected, cannot access article');
-			return null;
+	public async getArticleById(id: string, sharedData?: string, compressedData?: string): Promise<Article | null> {
+		console.log('🔍 getArticleById called with:', { id, hasSharedData: !!sharedData, hasCompressedData: !!compressedData });
+		
+		// Intentar datos comprimidos primero
+		if (compressedData) {
+			try {
+				console.log('📦 Attempting to decompress data...');
+				const decompressed = this.decompressString(compressedData);
+				const compactData = JSON.parse(decompressed);
+				
+				// Convertir formato compacto a formato completo
+				const articleData = {
+					id: compactData.i,
+					title: compactData.t,
+					content: compactData.c,
+					author: compactData.a,
+					createdAt: compactData.d,
+					isPublic: !!compactData.p,
+					image: compactData.img,
+					txId: compactData.x
+				};
+				
+				console.log('📦 Decompressed article data:', { 
+					id: articleData.id, 
+					isPublic: articleData.isPublic, 
+					title: articleData.title?.substring(0, 50) + '...' 
+				});
+				
+				// Validar que es el artículo correcto y público
+				if (articleData.id === id && articleData.isPublic) {
+					console.log('✅ Loading compressed shared article from URL');
+					// Almacenar para futuras visitas
+					this.storeArticleForSharing(articleData);
+					return articleData;
+				}
+			} catch (error) {
+				console.warn('❌ Failed to decompress article data:', error);
+			}
+		}
+		
+		// Si hay datos compartidos regulares, intentar decodificar
+		if (sharedData) {
+			try {
+				console.log('📎 Attempting to decode shared data...');
+				const decodedData = atob(sharedData);
+				const articleData = JSON.parse(decodedData);
+				
+				console.log('📎 Decoded article data:', { 
+					id: articleData.id, 
+					isPublic: articleData.isPublic, 
+					title: articleData.title?.substring(0, 50) + '...' 
+				});
+				
+				// Validar que es el artículo correcto y público
+				if (articleData.id === id && articleData.isPublic) {
+					console.log('✅ Loading shared public article from URL');
+					// Almacenar para futuras visitas
+					this.storeArticleForSharing(articleData);
+					return articleData;
+				} else {
+					console.warn('❌ Article ID mismatch or not public:', { 
+						expectedId: id, 
+						actualId: articleData.id, 
+						isPublic: articleData.isPublic 
+					});
+				}
+			} catch (error) {
+				console.warn('❌ Failed to decode shared article data:', error);
+			}
 		}
 
+		console.log('🔍 Trying local storage...');
 		const articles = await this.getDecryptedArticles();
-		return articles.find(article => article.id === id) || null;
+		const localArticle = articles.find(article => article.id === id);
+		
+		if (localArticle) {
+			// Si encontramos el artículo localmente y es público, almacenarlo para compartir
+			if (localArticle.isPublic) {
+				this.storeArticleForSharing(localArticle);
+			}
+			return localArticle;
+		}
+		
+		// Último intento: buscar en caché de artículos compartidos
+		console.log('🔍 Trying shared cache...');
+		const sharedArticle = this.getSharedArticle(id);
+		if (sharedArticle) {
+			return sharedArticle;
+		}
+		
+		return null;
+	}
+
+	public storeArticleForSharing(article: Article): void {
+		// Almacenar artículos públicos temporalmente para compartir
+		if (!article.isPublic) return;
+		
+		try {
+			const sharedArticles = JSON.parse(localStorage.getItem('sharedArticles') || '{}');
+			sharedArticles[article.id] = {
+				...article,
+				sharedAt: Date.now(),
+				expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000) // 7 días
+			};
+			localStorage.setItem('sharedArticles', JSON.stringify(sharedArticles));
+		} catch (error) {
+			console.warn('Failed to store article for sharing:', error);
+		}
+	}
+
+	public getSharedArticle(id: string): Article | null {
+		try {
+			const sharedArticles = JSON.parse(localStorage.getItem('sharedArticles') || '{}');
+			const shared = sharedArticles[id];
+			
+			if (shared && shared.expiresAt > Date.now()) {
+				console.log('📤 Found shared article in cache');
+				return shared;
+			} else if (shared) {
+				// Limpiar artículo expirado
+				delete sharedArticles[id];
+				localStorage.setItem('sharedArticles', JSON.stringify(sharedArticles));
+			}
+		} catch (error) {
+			console.warn('Failed to get shared article:', error);
+		}
+		return null;
 	}
 
 	public async getArticlesByAuthor(authorAddress: string): Promise<Article[]> {
@@ -494,6 +613,105 @@ export class ArticleService {
 
 		console.log(`🎉 Key recovery complete. Recovered ${recoveredCount} keys.`);
 		return recoveredCount;
+	}
+
+	public generateShareableURL(article: Article, compress: boolean = true): string {
+		// Solo permitir compartir artículos públicos
+		if (!article.isPublic) {
+			throw new Error('Cannot share private articles');
+		}
+
+		try {
+			// Crear datos ultra-mínimos para compartir
+			const shareData = {
+				i: article.id,
+				t: article.title,
+				c: article.content,
+				a: article.author,
+				d: article.createdAt,
+				p: 1, // isPublic siempre true para compartidos
+				...(article.image && { img: article.image }),
+				x: article.txId
+			};
+
+			let encoded: string;
+
+			if (compress) {
+				// Comprimir con pako y luego base64
+				const jsonString = JSON.stringify(shareData);
+				const compressed = this.compressString(jsonString);
+				encoded = compressed;
+			} else {
+				// Solo base64 (método anterior) 
+				encoded = btoa(JSON.stringify(shareData));
+			}
+			
+			// Generar URL
+			const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+			const param = compress ? 'c' : 'shared';
+			return `${baseUrl}/articles/${article.id}?${param}=${encoded}`;
+		} catch (error) {
+			console.error('Error generating shareable URL:', error);
+			throw new Error('Failed to generate shareable URL');
+		}
+	}
+
+	private compressString(str: string): string {
+		try {
+			// Importar pako de forma dinámica
+			const pako = require('pako');
+			
+			// Comprimir con máxima compresión
+			const compressed = pako.deflate(str, { 
+				level: 9,
+				windowBits: 15,
+				memLevel: 9,
+				strategy: 0
+			});
+			
+			// Convertir a base64 URL-safe más eficiente
+			const uint8Array = new Uint8Array(compressed);
+			let binaryString = '';
+			const chunkSize = 8192;
+			
+			for (let i = 0; i < uint8Array.length; i += chunkSize) {
+				const chunk = uint8Array.slice(i, i + chunkSize);
+				binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+			}
+			
+			const base64 = btoa(binaryString);
+			return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+		} catch (error) {
+			console.warn('Compression failed, falling back to regular base64:', error);
+			return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+		}
+	}
+
+	private decompressString(compressed: string): string {
+		try {
+			// Importar pako de forma dinámica
+			const pako = require('pako');
+			
+			// Restaurar caracteres base64
+			let base64 = compressed.replace(/-/g, '+').replace(/_/g, '/');
+			while (base64.length % 4) {
+				base64 += '=';
+			}
+			
+			// Decodificar base64
+			const binaryString = atob(base64);
+			const bytes = new Uint8Array(binaryString.length);
+			for (let i = 0; i < binaryString.length; i++) {
+				bytes[i] = binaryString.charCodeAt(i);
+			}
+			
+			// Descomprimir
+			const decompressed = pako.inflate(bytes, { to: 'string' });
+			return decompressed;
+		} catch (error) {
+			console.warn('Decompression failed, trying regular base64:', error);
+			return atob(compressed);
+		}
 	}
 
 	public getArticleStats() {
