@@ -15,6 +15,9 @@ export interface CryptoService {
 	decrypt(request: DecryptionRequest): Promise<string>;
 	generateKey(): Promise<string>;
 	generateNonce(): Uint8Array;
+	encryptPrivateArticle(data: string, articleId: string): Promise<EncryptionResult>;
+	encryptPublicArticle(data: string, articleId: string): Promise<EncryptionResult & { sharedKeyInfo: any }>;
+	decryptPrivateArticle(encryptedData: string, nonce: string, articleId: string): Promise<string>;
 }
 
 export class CryptoError extends Error {

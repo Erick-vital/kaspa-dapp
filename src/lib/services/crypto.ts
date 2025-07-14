@@ -2,6 +2,7 @@ import { chacha20poly1305 } from '@noble/ciphers/chacha';
 import { randomBytes } from '@noble/ciphers/webcrypto';
 import type { CryptoService, EncryptionResult, DecryptionRequest } from '../types/crypto.js';
 import { CryptoError } from '../types/crypto.js';
+import { keyDerivationService, type SharedKeyInfo } from './keyDerivation.js';
 
 export class ChaCha20Poly1305Service implements CryptoService {
 	private static instance: ChaCha20Poly1305Service;
@@ -66,6 +67,102 @@ export class ChaCha20Poly1305Service implements CryptoService {
 			throw new CryptoError(
 				`Failed to encrypt data: ${error instanceof Error ? error.message : 'Unknown error'}`,
 				'ENCRYPTION_FAILED'
+			);
+		}
+	}
+
+	/**
+	 * Encripta un artículo privado usando derivación de clave desde la wallet
+	 */
+	public async encryptPrivateArticle(data: string, articleId: string): Promise<EncryptionResult> {
+		try {
+			// Derivar clave específica del artículo desde la wallet
+			const keyResult = await keyDerivationService.derivePrivateArticleKey(articleId);
+			const nonce = this.generateNonce();
+			
+			// Convert key from base64 to Uint8Array
+			const keyBytes = Uint8Array.from(atob(keyResult.key), (c) => c.charCodeAt(0));
+			
+			// Convert data to bytes
+			const dataBytes = new TextEncoder().encode(data);
+			
+			// Create cipher and encrypt
+			const cipher = chacha20poly1305(keyBytes, nonce);
+			const encryptedBytes = cipher.encrypt(dataBytes);
+			
+			// Convert to base64
+			const encryptedData = btoa(String.fromCharCode(...encryptedBytes));
+			const nonceBase64 = btoa(String.fromCharCode(...nonce));
+
+			return {
+				encryptedData,
+				nonce: nonceBase64,
+				key: keyResult.key
+			};
+		} catch (error) {
+			throw new CryptoError(
+				`Failed to encrypt private article: ${error instanceof Error ? error.message : 'Unknown error'}`,
+				'PRIVATE_ENCRYPTION_FAILED'
+			);
+		}
+	}
+
+	/**
+	 * Encripta un artículo público usando shared key para URL sharing
+	 */
+	public encryptPublicArticle(data: string, articleId: string): Promise<EncryptionResult & { sharedKeyInfo: SharedKeyInfo }> {
+		return new Promise((resolve, reject) => {
+			try {
+				// Generar shared key para compartir
+				const sharedKeyInfo = keyDerivationService.generateSharedKey(articleId);
+				const nonce = this.generateNonce();
+				
+				// Convert key from base64 to Uint8Array
+				const keyBytes = Uint8Array.from(atob(sharedKeyInfo.key), (c) => c.charCodeAt(0));
+				
+				// Convert data to bytes
+				const dataBytes = new TextEncoder().encode(data);
+				
+				// Create cipher and encrypt
+				const cipher = chacha20poly1305(keyBytes, nonce);
+				const encryptedBytes = cipher.encrypt(dataBytes);
+				
+				// Convert to base64
+				const encryptedData = btoa(String.fromCharCode(...encryptedBytes));
+				const nonceBase64 = btoa(String.fromCharCode(...nonce));
+
+				resolve({
+					encryptedData,
+					nonce: nonceBase64,
+					key: sharedKeyInfo.key,
+					sharedKeyInfo
+				});
+			} catch (error) {
+				reject(new CryptoError(
+					`Failed to encrypt public article: ${error instanceof Error ? error.message : 'Unknown error'}`,
+					'PUBLIC_ENCRYPTION_FAILED'
+				));
+			}
+		});
+	}
+
+	/**
+	 * Desencripta un artículo privado re-derivando la clave desde la wallet
+	 */
+	public async decryptPrivateArticle(encryptedData: string, nonce: string, articleId: string): Promise<string> {
+		try {
+			// Re-derivar clave desde la wallet
+			const keyResult = await keyDerivationService.derivePrivateArticleKey(articleId);
+			
+			return await this.decrypt({
+				encryptedData,
+				nonce,
+				key: keyResult.key
+			});
+		} catch (error) {
+			throw new CryptoError(
+				`Failed to decrypt private article: ${error instanceof Error ? error.message : 'Unknown error'}`,
+				'PRIVATE_DECRYPTION_FAILED'
 			);
 		}
 	}

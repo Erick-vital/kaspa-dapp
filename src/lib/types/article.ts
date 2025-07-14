@@ -62,4 +62,10 @@ export interface PublishResult {
 	txId?: string;
 	error?: string;
 	fee?: number;
+	sharedKeyInfo?: {
+		keyId: string;
+		key: string;
+		createdAt: number;
+		articleId: string;
+	};
 }

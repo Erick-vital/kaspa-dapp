@@ -7,11 +7,26 @@
 		isWalletInstalled,
 		shortAddress
 	} from '$lib/stores/wallet.js';
+	import { authStore, authActions, isAuthenticated } from '$lib/stores/auth.js';
+	import { kaspaAuthService } from '$lib/services/kaspaAuth.js';
 	import DebugPanel from '$lib/components/DebugPanel.svelte';
 
 	let { children } = $props();
 
 	onMount(() => {
+		// Reset del sistema para desarrollo - limpiar datos antiguos
+		if (typeof window !== 'undefined') {
+			const currentVersion = '2.0.0'; // Nueva versión con Kaspa Auth
+			const storedVersion = localStorage.getItem('kaspa_dapp_version');
+			
+			if (storedVersion !== currentVersion) {
+				console.log('🔄 Resetting to new Kaspa Auth system...');
+				kaspaAuthService.clearAllAuthData();
+				localStorage.setItem('kaspa_dapp_version', currentVersion);
+				console.log('✅ Reset completed - ready for Kaspa Auth!');
+			}
+		}
+		
 		walletActions.checkConnection();
 		walletActions.setupEventListeners();
 	});
@@ -22,6 +37,14 @@
 
 	function handleDisconnectWallet() {
 		walletActions.disconnect();
+	}
+
+	function handleAuthenticate() {
+		authActions.authenticate();
+	}
+
+	function handleLogout() {
+		authActions.logout();
 	}
 </script>
 
@@ -49,16 +72,45 @@
 							Install KasWare
 						</a>
 					{:else if $walletStore.isConnected}
-						<div class="flex items-center space-x-2">
-							<span class="text-sm text-green-600">●</span>
-							<span class="font-mono text-sm text-gray-700">{$shortAddress}</span>
-							<button
-								on:click={handleDisconnectWallet}
-								disabled={$walletStore.isLoading}
-								class="text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
-							>
-								Disconnect
-							</button>
+						<div class="flex items-center space-x-4">
+							<!-- Authentication Status -->
+							{#if $isAuthenticated}
+								<div class="flex items-center space-x-2">
+									<span class="text-sm text-blue-600">🔐</span>
+									<span class="text-xs text-blue-600">Authenticated</span>
+									<button
+										on:click={handleLogout}
+										class="text-xs text-blue-600 hover:text-blue-800 underline"
+									>
+										Logout
+									</button>
+								</div>
+							{:else}
+								<button
+									on:click={handleAuthenticate}
+									disabled={$authStore.isLoading}
+									class="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-50"
+								>
+									{#if $authStore.isLoading}
+										Authenticating...
+									{:else}
+										🔐 Authenticate
+									{/if}
+								</button>
+							{/if}
+							
+							<!-- Wallet Info -->
+							<div class="flex items-center space-x-2">
+								<span class="text-sm text-green-600">●</span>
+								<span class="font-mono text-sm text-gray-700">{$shortAddress}</span>
+								<button
+									on:click={handleDisconnectWallet}
+									disabled={$walletStore.isLoading}
+									class="text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
+								>
+									Disconnect
+								</button>
+							</div>
 						</div>
 					{:else}
 						<button

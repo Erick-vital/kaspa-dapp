@@ -2,6 +2,7 @@
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 	import { articleService } from '$lib/services/article';
 	import { walletStore } from '$lib/stores/wallet';
+	import { authStore, authActions, walletAuthStatus } from '$lib/stores/auth';
 	import type { CreateArticleRequest } from '$lib/types/article';
 
 	let title = '';
@@ -14,6 +15,7 @@
 	let activeTab = 'editor';
 	let publishResult = '';
 	let publishError = '';
+	let shareUrl = '';
 
 	// Reactive variables for content size calculation
 	$: contentSize = content ? new TextEncoder().encode(content).length : 0;
@@ -108,6 +110,13 @@
 
 			if (result.success) {
 				publishResult = `Article published successfully! Transaction ID: ${result.txId}`;
+				
+				// Generar share URL para artículos públicos
+				if (isPublic && result.sharedKeyInfo && typeof window !== 'undefined') {
+					const baseUrl = window.location.origin;
+					shareUrl = `${baseUrl}/articles/${result.articleId}?key=${result.sharedKeyInfo.keyId}`;
+				}
+				
 				// Limpiar formulario después de publicar exitosamente
 				title = '';
 				content = '';
@@ -133,6 +142,19 @@
 	function clearMessages() {
 		publishResult = '';
 		publishError = '';
+		shareUrl = '';
+	}
+
+	async function copyShareUrl() {
+		if (shareUrl) {
+			try {
+				await navigator.clipboard.writeText(shareUrl);
+				alert('Share URL copied to clipboard!');
+			} catch (err) {
+				console.error('Failed to copy share URL:', err);
+				alert('Failed to copy share URL');
+			}
+		}
 	}
 
 	// Cargar draft al montar el componente
@@ -369,18 +391,87 @@ console.log('Hello world');
 			<h2 class="mb-4 text-lg font-medium text-gray-900">Configuration</h2>
 
 			<div class="space-y-4">
-				<div class="flex items-center">
-					<input
-						id="public"
-						type="checkbox"
-						bind:checked={isPublic}
-						on:change={clearMessages}
-						class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-					/>
-					<label for="public" class="ml-2 block text-sm text-gray-700">
-						Make this article public
-					</label>
+				<!-- Article Type Selection -->
+				<div class="rounded-lg border border-gray-200 p-4">
+					<h3 class="text-sm font-medium text-gray-900 mb-3">Article Type</h3>
+					<div class="space-y-3">
+						<label class="flex items-start space-x-3 cursor-pointer">
+							<input
+								type="radio"
+								bind:group={isPublic}
+								value={true}
+								on:change={clearMessages}
+								class="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500"
+							/>
+							<div class="flex-1">
+								<div class="flex items-center space-x-2">
+									<span class="text-green-600">🔓</span>
+									<span class="font-medium text-gray-900">Public Article</span>
+								</div>
+								<p class="text-sm text-gray-600 mt-1">
+									Anyone can read this article. A shareable link will be generated for easy distribution.
+								</p>
+							</div>
+						</label>
+						
+						<label class="flex items-start space-x-3 cursor-pointer">
+							<input
+								type="radio"
+								bind:group={isPublic}
+								value={false}
+								on:change={clearMessages}
+								class="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500"
+								disabled={!$walletAuthStatus.canCreatePrivateArticles}
+							/>
+							<div class="flex-1">
+								<div class="flex items-center space-x-2">
+									<span class="text-orange-600">🔒</span>
+									<span class="font-medium text-gray-900">Private Article</span>
+								</div>
+								<p class="text-sm text-gray-600 mt-1">
+									Only you can access this article. Requires Kaspa wallet authentication to read.
+								</p>
+								{#if !$walletAuthStatus.canCreatePrivateArticles}
+									<p class="text-sm text-red-600 mt-1">
+										{#if !$walletAuthStatus.walletConnected}
+											Connect your wallet first
+										{:else if !$walletAuthStatus.authenticated}
+											Authenticate with Kaspa to create private articles
+										{/if}
+									</p>
+								{/if}
+							</div>
+						</label>
+					</div>
 				</div>
+
+				<!-- Authentication Status for Private Articles -->
+				{#if !isPublic && !$walletAuthStatus.canCreatePrivateArticles}
+					<div class="rounded-lg bg-yellow-50 border border-yellow-200 p-4">
+						<div class="flex items-start space-x-3">
+							<span class="text-yellow-600">⚠️</span>
+							<div>
+								<h4 class="text-sm font-medium text-yellow-900">Authentication Required</h4>
+								<p class="text-sm text-yellow-700 mt-1">
+									To create private articles, you need to authenticate with your Kaspa wallet first.
+								</p>
+								{#if $walletAuthStatus.walletConnected && !$walletAuthStatus.authenticated}
+									<button
+										on:click={() => authActions.authenticate()}
+										disabled={$authStore.isLoading}
+										class="mt-2 text-sm bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700 disabled:opacity-50"
+									>
+										{#if $authStore.isLoading}
+											Authenticating...
+										{:else}
+											🔐 Authenticate Now
+										{/if}
+									</button>
+								{/if}
+							</div>
+						</div>
+					</div>
+				{/if}
 
 				{#if !isPublic}
 					<div>
@@ -429,16 +520,16 @@ console.log('Hello world');
 
 						<div class="flex items-start space-x-2">
 							<span class="{isPublic ? 'text-green-600' : 'text-orange-600'}">
-								{isPublic ? '🔓' : '🔒'}
+								{isPublic ? '🔗' : '🔐'}
 							</span>
 							<div>
 								<span class="text-blue-800 font-medium">
-									{isPublic ? 'Public Article' : 'Private Article'}
+									{isPublic ? 'Shareable Link' : 'Wallet Authentication'}
 								</span>
 								<p class="text-blue-600">
 									{isPublic 
-										? 'Anyone can read this article for free' 
-										: `Readers pay ${price || 0} KAS to unlock`
+										? 'A secure sharing link will be generated for distribution' 
+										: 'Only you can access using your Kaspa wallet signature'
 									}
 								</p>
 							</div>
@@ -486,6 +577,29 @@ console.log('Hello world');
 		{#if publishResult}
 			<div class="rounded-lg bg-green-50 border border-green-200 p-4">
 				<p class="text-sm text-green-700">{publishResult}</p>
+				
+				<!-- Share URL for public articles -->
+				{#if shareUrl}
+					<div class="mt-3 pt-3 border-t border-green-200">
+						<div class="flex items-center justify-between">
+							<div class="flex-1">
+								<p class="text-sm font-medium text-green-800 mb-1">🔗 Share Link Generated</p>
+								<p class="text-xs text-green-600 font-mono break-all bg-green-100 p-2 rounded">
+									{shareUrl}
+								</p>
+							</div>
+							<button
+								on:click={copyShareUrl}
+								class="ml-3 text-sm bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 transition-colors"
+							>
+								Copy
+							</button>
+						</div>
+						<p class="text-xs text-green-600 mt-2">
+							Anyone with this link can read your public article
+						</p>
+					</div>
+				{/if}
 			</div>
 		{/if}
 

@@ -6,14 +6,26 @@
 	import ArticleCard from '$lib/components/ArticleCard.svelte';
 	import { articleService } from '$lib/services/article';
 	import { walletStore } from '$lib/stores/wallet';
+	import { authStore, authActions } from '$lib/stores/auth';
+	import { cryptoService } from '$lib/services/crypto';
 	import type { Article } from '$lib/types/article';
 
 	let article: Article | null = null;
 	let loading = true;
 	let error = '';
 	let articleId: string;
+	let sharedKey: string | null = null;
+	let needsAuth = false;
+	let shareUrl = '';
 
 	$: articleId = $page.params.id;
+	$: sharedKey = $page.url.searchParams.get('key');
+
+	// Generar share URL cuando tenemos un artículo público
+	$: if (article && article.isPublic && typeof window !== 'undefined') {
+		const baseUrl = window.location.origin + window.location.pathname;
+		shareUrl = sharedKey ? `${baseUrl}?key=${sharedKey}` : baseUrl;
+	}
 
 	function formatDate(timestamp: number): string {
 		return new Date(timestamp).toLocaleDateString('en-US', {
@@ -34,12 +46,24 @@
 		try {
 			loading = true;
 			error = '';
+			needsAuth = false;
 			
 			if (!articleId) {
 				throw new Error('No article ID provided');
 			}
 
-			article = await articleService.getArticleById(articleId);
+			// Intentar cargar artículo público con shared key si está disponible
+			if (sharedKey) {
+				article = await loadPublicArticleWithSharedKey(articleId, sharedKey);
+			} else {
+				// Cargar artículo normal (puede ser público sin shared key o privado)
+				article = await articleService.getArticleById(articleId);
+				
+				// Si el artículo es privado y no está autenticado, mostrar prompt de auth
+				if (article && !article.isPublic && !$authStore.isAuthenticated) {
+					needsAuth = true;
+				}
+			}
 			
 			if (!article) {
 				throw new Error('Article not found');
@@ -49,6 +73,63 @@
 			console.error('Error loading article:', err);
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function loadPublicArticleWithSharedKey(id: string, key: string): Promise<Article | null> {
+		try {
+			// Buscar el artículo encriptado en localStorage
+			const stored = localStorage.getItem('articles');
+			if (!stored) return null;
+			
+			const articles = JSON.parse(stored);
+			const encryptedArticle = articles.find((a: any) => a.id === id);
+			if (!encryptedArticle) return null;
+
+			// Desencriptar usando la shared key
+			const decryptedContent = await cryptoService.decrypt({
+				encryptedData: encryptedArticle.encryptedData,
+				nonce: encryptedArticle.nonce,
+				key: key
+			});
+
+			const articleData = JSON.parse(decryptedContent);
+			
+			return {
+				id: encryptedArticle.id,
+				title: articleData.title,
+				content: articleData.content,
+				image: articleData.image,
+				author: encryptedArticle.author,
+				createdAt: encryptedArticle.createdAt,
+				isPublic: true,
+				txId: encryptedArticle.txId
+			} as Article;
+		} catch (err) {
+			console.error('Error loading shared article:', err);
+			throw new Error('Invalid shared link or article not accessible');
+		}
+	}
+
+	async function handleAuthenticate() {
+		try {
+			await authActions.authenticate();
+			// Recargar artículo después de autenticarse
+			await loadArticle();
+		} catch (err) {
+			console.error('Authentication failed:', err);
+		}
+	}
+
+	async function copyShareLink() {
+		if (shareUrl) {
+			try {
+				await navigator.clipboard.writeText(shareUrl);
+				alert('Share link copied to clipboard!');
+			} catch (err) {
+				console.error('Failed to copy share link:', err);
+				alert('Failed to copy share link');
+			}
 		}
 	}
 
@@ -90,6 +171,42 @@
 			<div class="text-center">
 				<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
 				<p class="text-gray-600">Loading article...</p>
+			</div>
+		</div>
+	</div>
+{:else if needsAuth}
+	<!-- Authentication Required -->
+	<div class="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+		<div class="text-center py-12">
+			<div class="max-w-md mx-auto">
+				<div class="text-6xl mb-4">🔒</div>
+				<h2 class="text-2xl font-bold text-gray-900 mb-2">Private Article</h2>
+				<p class="text-gray-600 mb-6">This article is private and requires Kaspa wallet authentication to access.</p>
+				<div class="flex flex-col gap-4">
+					{#if !$walletStore.isConnected}
+						<p class="text-sm text-orange-600 mb-2">Please connect your KasWare wallet first</p>
+					{/if}
+					<button
+						on:click={handleAuthenticate}
+						disabled={!$walletStore.isConnected || $authStore.isLoading}
+						class="rounded-md bg-blue-600 px-6 py-3 text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+					>
+						{#if $authStore.isLoading}
+							Authenticating...
+						{:else}
+							🔐 Authenticate with Kaspa
+						{/if}
+					</button>
+					{#if $authStore.error}
+						<p class="text-sm text-red-600">{$authStore.error}</p>
+					{/if}
+					<a 
+						href="/articles" 
+						class="text-gray-600 hover:text-gray-700 text-sm transition-colors"
+					>
+						← Back to Articles
+					</a>
+				</div>
 			</div>
 		</div>
 	</div>
@@ -136,9 +253,21 @@
 				<div class="flex items-start justify-between mb-4">
 					<h1 class="text-4xl font-bold text-gray-900 flex-1 mr-4">{article.title}</h1>
 					
-					<!-- Actions (only for author) -->
-					{#if $walletStore.address === article.author}
-						<div class="flex gap-2">
+					<!-- Actions -->
+					<div class="flex gap-2">
+						<!-- Share button for public articles -->
+						{#if article.isPublic && shareUrl}
+							<button
+								on:click={copyShareLink}
+								class="text-blue-600 hover:text-blue-700 p-2 rounded hover:bg-blue-50 transition-colors"
+								title="Copy share link"
+							>
+								🔗
+							</button>
+						{/if}
+						
+						<!-- Delete button (only for author) -->
+						{#if $walletStore.address === article.author}
 							<button
 								on:click={() => handleDelete(article!.id)}
 								class="text-red-600 hover:text-red-700 p-2 rounded hover:bg-red-50 transition-colors"
@@ -146,8 +275,8 @@
 							>
 								🗑️
 							</button>
-						</div>
-					{/if}
+						{/if}
+					</div>
 				</div>
 
 				<!-- Article Metadata -->
@@ -190,6 +319,21 @@
 						<span class="font-mono text-xs">{article.txId}</span>
 					</div>
 				</div>
+
+				<!-- Shared Link Info for Public Articles -->
+				{#if article.isPublic && sharedKey}
+					<div class="mb-6 rounded-lg bg-green-50 border border-green-200 p-4">
+						<div class="flex items-start gap-3">
+							<span class="text-green-600 text-lg">🔗</span>
+							<div class="flex-1">
+								<h4 class="text-sm font-medium text-green-900 mb-1">Shared Article</h4>
+								<p class="text-sm text-green-700">
+									You're viewing this public article via a shared link. Anyone with this link can access the content.
+								</p>
+							</div>
+						</div>
+					</div>
+				{/if}
 			</header>
 
 			<!-- Featured Image -->
